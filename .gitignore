@@ -1,6 +1,9 @@
 *
 
 !.gitignore
-!.git/
-!.lab1/
-!.lab2/
+!lab1
+!lab1/*.py
+!lab1/*.ui
+!lab2
+!lab2/*.py
+!lab2/*.ui
