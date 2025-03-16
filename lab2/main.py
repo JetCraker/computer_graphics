@@ -137,7 +137,13 @@ class TriangleAPP(QMainWindow):
                 curve_y.append(by)
                 t += step
 
-            self.ax.plot(curve_x, curve_y, color=color, label=f"Крива Безьє №{active_curve_index + 1}")
+            if not hasattr(self, 'bezier_lines'):
+                self.bezier_lines = []
+
+            bezier_line, = self.ax.plot(curve_x, curve_y, color=color, label=f"Крива Безьє №{active_curve_index + 1}")
+            self.bezier_lines.append(bezier_line)
+
+            self.ax.legend()
             self.canvas.draw()
         except ValueError:
             self.ui.error_label.setText("Дані введені некоректно!")
@@ -154,28 +160,29 @@ class TriangleAPP(QMainWindow):
 
             if step <= 0 or step > 1:
                 self.ui.error_label.setText("Крок має бути у межах (0, 1]")
+                return
 
             n = len(curves[active_curve_index][0]) - 1
-
             t_values = [i * step for i in range(int(1 / step) + 1)]
 
-            curve_x = list()
-            curve_y = list()
+            curve_x = []
+            curve_y = []
 
             for t in t_values:
-                x_t = 0
-                y_t = 0
-
-                for i in range(n + 1):
-                    y_t += bernstein(n, i, t) * curves[active_curve_index][1][i]
-                    x_t += bernstein(n, i, t) * curves[active_curve_index][0][i]
-
+                x_t = sum(bernstein(n, i, t) * curves[active_curve_index][0][i] for i in range(n + 1))
+                y_t = sum(bernstein(n, i, t) * curves[active_curve_index][1][i] for i in range(n + 1))
                 curve_x.append(x_t)
                 curve_y.append(y_t)
 
-            self.ax.plot(curve_x, curve_y, color=color, label=f"Парам. Безьє №{active_curve_index + 1}")
-            self.canvas.draw()
+            if not hasattr(self, 'parametric_lines'):
+                self.parametric_lines = []
 
+            parametric_line, = self.ax.plot(curve_x, curve_y, color=color,
+                                            label=f"Парам. Безьє №{active_curve_index + 1}")
+            self.parametric_lines.append(parametric_line)
+
+            self.ax.legend()
+            self.canvas.draw()
         except ValueError:
             self.ui.error_label.setText("Дані введені некоректно!")
 
@@ -205,19 +212,32 @@ class TriangleAPP(QMainWindow):
             self.ui.error_label.setText("Дані введені некоректно!")
 
     def clear(self):
-        global active_curve_index
+        global active_curve_index, curves
         if active_curve_index == -1:
             self.ui.error_label.setText("Спочатку створіть криву!")
             return
 
-        curves[active_curve_index] = ([], [])
-        self.ax.clear()
+        if hasattr(self, 'curve_lines'):
+            for line in self.curve_lines.values():
+                line.remove()
+            self.curve_lines.clear()
 
-        self.ax.set_xlim(-10, 10)
-        self.ax.set_ylim(-10, 10)
+        if hasattr(self, 'bezier_lines'):
+            for bezier in self.bezier_lines:
+                bezier.remove()
+            self.bezier_lines.clear()
+
+        if hasattr(self, 'parametric_lines'):
+            for parametric in self.parametric_lines:
+                parametric.remove()
+            self.parametric_lines.clear()
+
+        curves.clear()
+
+        if self.ax.get_legend():
+            self.ax.get_legend().remove()
 
         self.canvas.draw()
-
 
     def on_scroll(self, event):
         scale_factor = 1.2 if event.step > 0 else 0.8
@@ -277,7 +297,7 @@ class TriangleAPP(QMainWindow):
 
         # Якщо права кнопка – шукаємо найближчу точку для перетягування
         elif event.button == 3:
-            threshold = 1.0  # поріг вибору (можна налаштувати)
+            threshold = 1.0  # поріг вибору
             closest_point = None
             min_dist = float('inf')
             for i, (x, y) in enumerate(zip(curves[active_curve_index][0], curves[active_curve_index][1])):
