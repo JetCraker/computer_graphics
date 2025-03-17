@@ -65,12 +65,14 @@ class TriangleAPP(QMainWindow):
         self.ax.grid(True)
 
     def create_new_curve(self):
+        """Створює нову активну криву"""
         global active_curve_index
         curves.append(([], []))
         active_curve_index = len(curves) - 1  # Робимо її активною
         self.ui.error_label.setText(f"Створено нову криву №{active_curve_index + 1}")
 
     def create_reference_points(self):
+        """Створює точки для кривої"""
         global active_curve_index
         if active_curve_index == -1:
             self.ui.error_label.setText("Спершу створіть нову криву!")
@@ -88,18 +90,7 @@ class TriangleAPP(QMainWindow):
             if not hasattr(self, 'curve_lines'):
                 self.curve_lines = {}
 
-            # Якщо лінія для активної кривої вже існує, оновлюємо її дані,
-            # інакше створюємо нову лінію для активної кривої
-            if active_curve_index in self.curve_lines:
-                line = self.curve_lines[active_curve_index]
-                line.set_data(curves[active_curve_index][0], curves[active_curve_index][1])
-            else:
-                line, = self.ax.plot(curves[active_curve_index][0],
-                                     curves[active_curve_index][1],
-                                     'o-',
-                                     color='black',
-                                     label=f"Крива №{active_curve_index + 1}")
-                self.curve_lines[active_curve_index] = line
+            self.update_curve_plot(active_curve_index)
 
             # Оновлюємо межі графіка за всіма точками усіх кривих
             all_x = [x for crv in curves for x in crv[0]]
@@ -149,6 +140,7 @@ class TriangleAPP(QMainWindow):
             self.ui.error_label.setText("Дані введені некоректно!")
 
     def parametric_curve_draw(self):
+        """Малює криву Безьє параметричним способом"""
         global active_curve_index
         if active_curve_index == -1 or len(curves[active_curve_index][0]) < 2:
             self.ui.error_label.setText("Додайте хоча б дві точки!")
@@ -187,8 +179,10 @@ class TriangleAPP(QMainWindow):
             self.ui.error_label.setText("Дані введені некоректно!")
 
     def compute_bernstein(self):
-        if not curves or len(curves[-1][0]) < 2:
-            self.ui.error_label.setText("Має бути хоча б 2 контрольні точки!")
+        # Перевіряємо, що є хоча б 3 контрольні точки (щоб були внутрішні точки)
+        if not curves or len(curves[-1][0]) < 3:
+            self.ui.error_label.setText(
+                "Потрібно мати принаймні 3 контрольні точки для обчислення внутрішніх поліномів!")
             return
 
         try:
@@ -197,19 +191,72 @@ class TriangleAPP(QMainWindow):
                 self.ui.error_label.setText("Крок має бути у межах (0, 1]!")
                 return
 
-            n = len(curves[-1][0]) - 1
-            t_values = [round(i * step, 2) for i in range(int(1 / step) + 1)]
-            bernstein_table = {t: [bernstein(n, i, t) for i in range(n + 1)] for t in t_values}
+            # Кількість контрольних точок
+            n_points = len(curves[-1][0])
+            # Ступінь кривої: n_points - 1
+            degree = n_points - 1
 
-            result_text = f"Поліноми Бернштейна для кривої №{len(curves)}:\n"
+            # Створюємо список значень параметра t
+            t_values = [round(i * step, 2) for i in range(int(1 / step) + 1)]
+
+            # Обчислюємо значення Bernstein-поліномів для внутрішніх точок (індекси від 1 до n_points-2)
+            bernstein_table = {
+                t: [bernstein(degree, i, t) for i in range(1, n_points - 1)]
+                for t in t_values
+            }
+
+            result_text = f"Внутрішні Bernstein поліноми для кривої №{len(curves)}:\n"
             for t, values in bernstein_table.items():
                 result_text += f"t = {t}: {values}\n"
 
-            self.show_modal_window("Поліноми Бернштейна", result_text)
+            self.show_modal_window("Внутрішні Bernstein поліноми", result_text)
             self.ui.error_label.setText("")
-
         except ValueError:
             self.ui.error_label.setText("Дані введені некоректно!")
+
+    def update_curve_plot(self, index):
+        # Якщо є попередні маркери для даної кривої, видаляємо їх
+        if hasattr(self, 'control_points_lines') and index in self.control_points_lines:
+            for marker in self.control_points_lines[index]:
+                marker.remove()
+            self.control_points_lines[index] = []
+        else:
+            if not hasattr(self, 'control_points_lines'):
+                self.control_points_lines = {}
+            self.control_points_lines[index] = []
+
+        # Отримуємо поточні координати контрольних точок
+        x_points = curves[index][0]
+        y_points = curves[index][1]
+
+        # Видаляємо попередню лінію (якщо існує)
+        if hasattr(self, 'curve_lines') and index in self.curve_lines:
+            self.curve_lines[index].remove()
+
+        # Малюємо з'єднувальну лінію (завжди чорною)
+        line, = self.ax.plot(x_points, y_points, '-', color='black', label=f"Крива №{index + 1}")
+        if not hasattr(self, 'curve_lines'):
+            self.curve_lines = {}
+        self.curve_lines[index] = line
+
+        # Малюємо маркери:
+        if len(x_points) > 0:
+            # Перша точка завжди червона
+            first_marker, = self.ax.plot(x_points[0], y_points[0], 'o', color='red')
+            self.control_points_lines[index].append(first_marker)
+
+            if len(x_points) > 1:
+                # Якщо більше однієї точки, остання теж червона
+                last_marker, = self.ax.plot(x_points[-1], y_points[-1], 'o', color='red')
+                self.control_points_lines[index].append(last_marker)
+
+            if len(x_points) > 2:
+                # Проміжні точки (якщо є) малюємо чорними
+                intermediate_marker, = self.ax.plot(x_points[1:-1], y_points[1:-1], 'o', color='black')
+                self.control_points_lines[index].append(intermediate_marker)
+
+        self.ax.legend()
+        self.canvas.draw()
 
     def clear(self):
         global active_curve_index, curves
@@ -231,6 +278,12 @@ class TriangleAPP(QMainWindow):
             for parametric in self.parametric_lines:
                 parametric.remove()
             self.parametric_lines.clear()
+
+        if hasattr(self, 'control_points_lines'):
+            for markers in self.control_points_lines.values():
+                for marker in markers:
+                    marker.remove()
+            self.control_points_lines.clear()
 
         curves.clear()
 
@@ -267,35 +320,18 @@ class TriangleAPP(QMainWindow):
         dialog.exec()
 
     def on_button_press(self, event):
-        """
-        Об'єднаний обробник події натискання миші:
-        - Ліва кнопка (1) + подвійний клік – додаємо нову точку.
-        - Права кнопка (3) – запускаємо режим перетягування, вибираючи точку з мінімальною відстанню.
-        """
         global active_curve_index
         if active_curve_index == -1 or event.inaxes is None:
             return
 
-        # Якщо подвійний лівий клік – додаємо точку
+        # Якщо подвійний лівий клік – додаємо точку до кривої
         if event.button == 1 and event.dblclick:
+            # Додаємо точку до кривої і оновлюємо відображення
             curves[active_curve_index][0].append(event.xdata)
             curves[active_curve_index][1].append(event.ydata)
-            if not hasattr(self, 'curve_lines'):
-                self.curve_lines = {}
-            if active_curve_index in self.curve_lines:
-                line = self.curve_lines[active_curve_index]
-                line.set_data(curves[active_curve_index][0], curves[active_curve_index][1])
-            else:
-                line, = self.ax.plot(curves[active_curve_index][0],
-                                     curves[active_curve_index][1],
-                                     'o-',
-                                     color='black',
-                                     label=f"Крива №{active_curve_index + 1}")
-                self.curve_lines[active_curve_index] = line
-            self.ax.legend()
-            self.canvas.draw()
+            self.update_curve_plot(active_curve_index)
 
-        # Якщо права кнопка – шукаємо найближчу точку для перетягування
+        # Якщо права кнопка – запускаємо режим перетягування
         elif event.button == 3:
             threshold = 1.0  # поріг вибору
             closest_point = None
@@ -322,11 +358,7 @@ class TriangleAPP(QMainWindow):
         curves[active_curve_index][0][self.dragging_point] = event.xdata
         curves[active_curve_index][1][self.dragging_point] = event.ydata
 
-        # Оновлюємо графічну лінію
-        if active_curve_index in self.curve_lines:
-            line = self.curve_lines[active_curve_index]
-            line.set_data(curves[active_curve_index][0], curves[active_curve_index][1])
-        self.canvas.draw()
+        self.update_curve_plot(active_curve_index)
 
     def on_release(self, event):
         self.dragging_point = None
