@@ -1,5 +1,7 @@
 import sys
 import math
+
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QDialog, QTextEdit, QPushButton
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas, NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
@@ -59,6 +61,11 @@ class TriangleAPP(QMainWindow):
         self.canvas.mpl_connect("scroll_event", self.on_scroll)
         self.canvas.mpl_connect("motion_notify_event", self.on_motion)
         self.canvas.mpl_connect("button_release_event", self.on_release)
+
+        self.update_timer = QTimer(self)
+        self.update_timer.setInterval(1)  # оновлення кожні 30 мс
+        self.update_timer.timeout.connect(self.update_dynamic_objects)
+        self.update_timer.start()
 
         self.ax.axhline(0, color="black", linewidth=1)
         self.ax.axvline(0, color="black", linewidth=1)
@@ -215,48 +222,43 @@ class TriangleAPP(QMainWindow):
             self.ui.error_label.setText("Дані введені некоректно!")
 
     def update_curve_plot(self, index):
-        # Якщо є попередні маркери для даної кривої, видаляємо їх
-        if hasattr(self, 'control_points_lines') and index in self.control_points_lines:
-            for marker in self.control_points_lines[index]:
-                marker.remove()
-            self.control_points_lines[index] = []
-        else:
-            if not hasattr(self, 'control_points_lines'):
-                self.control_points_lines = {}
-            self.control_points_lines[index] = []
-
-        # Отримуємо поточні координати контрольних точок
+        # Отримуємо координати контрольних точок
         x_points = curves[index][0]
         y_points = curves[index][1]
 
-        # Видаляємо попередню лінію (якщо існує)
+        # Оновлюємо лінію, що з'єднує контрольні точки
         if hasattr(self, 'curve_lines') and index in self.curve_lines:
-            self.curve_lines[index].remove()
+            self.curve_lines[index].set_data(x_points, y_points)
+        else:
+            line, = self.ax.plot(x_points, y_points, '-', color='black', label=f"Крива №{index + 1}")
+            if not hasattr(self, 'curve_lines'):
+                self.curve_lines = {}
+            self.curve_lines[index] = line
 
-        # Малюємо з'єднувальну лінію (завжди чорною)
-        line, = self.ax.plot(x_points, y_points, '-', color='black', label=f"Крива №{index + 1}")
-        if not hasattr(self, 'curve_lines'):
-            self.curve_lines = {}
-        self.curve_lines[index] = line
+        # Формуємо список кольорів: якщо тільки одна точка, вона червона;
+        # якщо дві – обидві червоні; якщо більше – перша та остання червоні, решта чорні.
+        if len(x_points) == 0:
+            return  # Немає точок для відображення
+        elif len(x_points) == 1:
+            colors = ['red']
+        elif len(x_points) == 2:
+            colors = ['red', 'red']
+        else:
+            colors = ['red'] + ['black'] * (len(x_points) - 2) + ['red']
 
-        # Малюємо маркери:
-        if len(x_points) > 0:
-            # Перша точка завжди червона
-            first_marker, = self.ax.plot(x_points[0], y_points[0], 'o', color='red')
-            self.control_points_lines[index].append(first_marker)
+        points = list(zip(x_points, y_points))
+        # Оновлюємо або створюємо scatter для відображення точок
+        if hasattr(self, 'control_points_scatter') and index in self.control_points_scatter:
+            scatter = self.control_points_scatter[index]
+            scatter.set_offsets(points)
+            scatter.set_facecolors(colors)
+        else:
+            scatter = self.ax.scatter(x_points, y_points, c=colors)
+            if not hasattr(self, 'control_points_scatter'):
+                self.control_points_scatter = {}
+            self.control_points_scatter[index] = scatter
 
-            if len(x_points) > 1:
-                # Якщо більше однієї точки, остання теж червона
-                last_marker, = self.ax.plot(x_points[-1], y_points[-1], 'o', color='red')
-                self.control_points_lines[index].append(last_marker)
-
-            if len(x_points) > 2:
-                # Проміжні точки (якщо є) малюємо чорними
-                intermediate_marker, = self.ax.plot(x_points[1:-1], y_points[1:-1], 'o', color='black')
-                self.control_points_lines[index].append(intermediate_marker)
-
-        self.ax.legend()
-        self.canvas.draw()
+        self.canvas.draw_idle()
 
     def clear(self):
         global active_curve_index, curves
@@ -347,17 +349,32 @@ class TriangleAPP(QMainWindow):
             else:
                 self.dragging_point = None
 
+    def update_dynamic_objects(self):
+        if hasattr(self, 'bezier_lines'):
+            for bezier in self.bezier_lines:
+                bezier.remove()
+            self.bezier_lines.clear()
+            self.bezier_curve_draw()
+
+        if hasattr(self, 'parametric_lines'):
+            for parametric in self.parametric_lines:
+                parametric.remove()
+            self.parametric_lines.clear()
+            self.parametric_curve_draw()
+        self.canvas.draw_idle()
+
     def on_motion(self, event):
         global active_curve_index
-        """Переміщення вибраної контрольної точки під час руху миші."""
-        if (not hasattr(self, 'dragging_point') or self.dragging_point is None or
-                event.inaxes is None):
+        if not hasattr(self, 'dragging_point') or self.dragging_point is None or event.inaxes is None:
             return
 
         # Оновлюємо координати вибраної точки
         curves[active_curve_index][0][self.dragging_point] = event.xdata
         curves[active_curve_index][1][self.dragging_point] = event.ydata
 
+
+
+        # Оновлюємо дані кривої і контрольних точок
         self.update_curve_plot(active_curve_index)
 
     def on_release(self, event):
