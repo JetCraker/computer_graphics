@@ -1,12 +1,9 @@
 import sys
 import math
-
-from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QDialog, QTextEdit, QPushButton
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas, NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
 from graph import Ui_MainWindow
-
 
 curves = []
 active_curve_index = -1
@@ -20,8 +17,8 @@ def bezier_curve(x, y, t):
     if len(x) == 1:
         return x[0], y[0]
 
-    new_points_x = list()
-    new_points_y = list()
+    new_points_x = []
+    new_points_y = []
 
     for i in range(len(x) - 1):
         new_x = (1 - t) * x[i] + t * x[i + 1]
@@ -42,13 +39,13 @@ class TriangleAPP(QMainWindow):
 
         self.fig = Figure()
         self.canvas = FigureCanvas(self.fig)
-        self.ax = self.fig.add_subplot(111) #  додає єдину область для побудови графіка.
+        self.ax = self.fig.add_subplot(111)  # додаємо єдину область для побудови графіка
         self.toolbar = NavigationToolbar(self.canvas, self)
 
-        layout = QVBoxLayout(self.ui.widget) # створює вертикальний макет
+        layout = QVBoxLayout(self.ui.widget)  # створюємо вертикальний макет
         layout.setContentsMargins(0, 0, 0, 0)  # мінімальні відступи
-        layout.addWidget(self.canvas) # додає полотно для відображення графіка.
-        layout.addWidget(self.toolbar) # додає панель інструментів для графіка.
+        layout.addWidget(self.canvas)  # додаємо полотно для відображення графіка
+        layout.addWidget(self.toolbar)  # додаємо панель інструментів для графіка
 
         self.ui.CreateButton.clicked.connect(self.create_reference_points)
         self.ui.ClearButton.clicked.connect(self.clear)
@@ -62,10 +59,7 @@ class TriangleAPP(QMainWindow):
         self.canvas.mpl_connect("motion_notify_event", self.on_motion)
         self.canvas.mpl_connect("button_release_event", self.on_release)
 
-        self.update_timer = QTimer(self)
-        self.update_timer.setInterval(1)  # оновлення кожні 30 мс
-        self.update_timer.timeout.connect(self.update_dynamic_objects)
-        self.update_timer.start()
+        # Видаляємо QTimer – тепер оновлення відбувається лише при натисканні кнопок або при переміщенні точок
 
         self.ax.axhline(0, color="black", linewidth=1)
         self.ax.axvline(0, color="black", linewidth=1)
@@ -75,7 +69,7 @@ class TriangleAPP(QMainWindow):
         """Створює нову активну криву"""
         global active_curve_index
         curves.append(([], []))
-        active_curve_index = len(curves) - 1  # Робимо її активною
+        active_curve_index = len(curves) - 1  # робимо її активною
         self.ui.error_label.setText(f"Створено нову криву №{active_curve_index + 1}")
 
     def create_reference_points(self):
@@ -136,10 +130,17 @@ class TriangleAPP(QMainWindow):
                 t += step
 
             if not hasattr(self, 'bezier_lines'):
-                self.bezier_lines = []
+                self.bezier_lines = {}
 
-            bezier_line, = self.ax.plot(curve_x, curve_y, color=color, label=f"Крива Безьє №{active_curve_index + 1}")
-            self.bezier_lines.append(bezier_line)
+            if active_curve_index in self.bezier_lines:
+                try:
+                    self.bezier_lines[active_curve_index].remove()
+                except ValueError:
+                    pass
+
+            bezier_line, = self.ax.plot(curve_x, curve_y, color=color,
+                                        label=f"Крива Безьє №{active_curve_index + 1}")
+            self.bezier_lines[active_curve_index] = bezier_line
 
             self.ax.legend()
             self.canvas.draw()
@@ -158,7 +159,7 @@ class TriangleAPP(QMainWindow):
             step = float(self.ui.step_lineEdit.text())
 
             if step <= 0 or step > 1:
-                self.ui.error_label.setText("Крок має бути у межах (0, 1]")
+                self.ui.error_label.setText("Крок має бути у межах (0, 1]!")
                 return
 
             n = len(curves[active_curve_index][0]) - 1
@@ -174,11 +175,17 @@ class TriangleAPP(QMainWindow):
                 curve_y.append(y_t)
 
             if not hasattr(self, 'parametric_lines'):
-                self.parametric_lines = []
+                self.parametric_lines = {}
+
+            if active_curve_index in self.parametric_lines:
+                try:
+                    self.parametric_lines[active_curve_index].remove()
+                except ValueError:
+                    pass
 
             parametric_line, = self.ax.plot(curve_x, curve_y, color=color,
                                             label=f"Парам. Безьє №{active_curve_index + 1}")
-            self.parametric_lines.append(parametric_line)
+            self.parametric_lines[active_curve_index] = parametric_line
 
             self.ax.legend()
             self.canvas.draw()
@@ -198,15 +205,11 @@ class TriangleAPP(QMainWindow):
                 self.ui.error_label.setText("Крок має бути у межах (0, 1]!")
                 return
 
-            # Кількість контрольних точок
             n_points = len(curves[-1][0])
-            # Ступінь кривої: n_points - 1
             degree = n_points - 1
 
-            # Створюємо список значень параметра t
             t_values = [round(i * step, 2) for i in range(int(1 / step) + 1)]
 
-            # Обчислюємо значення Bernstein-поліномів для внутрішніх точок (індекси від 1 до n_points-2)
             bernstein_table = {
                 t: [bernstein(degree, i, t) for i in range(1, n_points - 1)]
                 for t in t_values
@@ -235,10 +238,8 @@ class TriangleAPP(QMainWindow):
                 self.curve_lines = {}
             self.curve_lines[index] = line
 
-        # Формуємо список кольорів: якщо тільки одна точка, вона червона;
-        # якщо дві – обидві червоні; якщо більше – перша та остання червоні, решта чорні.
         if len(x_points) == 0:
-            return  # Немає точок для відображення
+            return
         elif len(x_points) == 1:
             colors = ['red']
         elif len(x_points) == 2:
@@ -247,7 +248,6 @@ class TriangleAPP(QMainWindow):
             colors = ['red'] + ['black'] * (len(x_points) - 2) + ['red']
 
         points = list(zip(x_points, y_points))
-        # Оновлюємо або створюємо scatter для відображення точок
         if hasattr(self, 'control_points_scatter') and index in self.control_points_scatter:
             scatter = self.control_points_scatter[index]
             scatter.set_offsets(points)
@@ -272,20 +272,19 @@ class TriangleAPP(QMainWindow):
             self.curve_lines.clear()
 
         if hasattr(self, 'bezier_lines'):
-            for bezier in self.bezier_lines:
+            for bezier in self.bezier_lines.values():
                 bezier.remove()
             self.bezier_lines.clear()
 
         if hasattr(self, 'parametric_lines'):
-            for parametric in self.parametric_lines:
+            for parametric in self.parametric_lines.values():
                 parametric.remove()
             self.parametric_lines.clear()
 
-        if hasattr(self, 'control_points_lines'):
-            for markers in self.control_points_lines.values():
-                for marker in markers:
-                    marker.remove()
-            self.control_points_lines.clear()
+        if hasattr(self, 'control_points_scatter'):
+            for scatter in self.control_points_scatter.values():
+                scatter.remove()
+            self.control_points_scatter.clear()
 
         curves.clear()
 
@@ -301,7 +300,6 @@ class TriangleAPP(QMainWindow):
         self.canvas.draw()
 
     def show_modal_window(self, title, text):
-        """Функція для створення модального вікна"""
         dialog = QDialog(self)
         dialog.setWindowTitle(title)
         dialog.setFixedSize(800, 800)
@@ -326,14 +324,10 @@ class TriangleAPP(QMainWindow):
         if active_curve_index == -1 or event.inaxes is None:
             return
 
-        # Якщо подвійний лівий клік – додаємо точку до кривої
         if event.button == 1 and event.dblclick:
-            # Додаємо точку до кривої і оновлюємо відображення
             curves[active_curve_index][0].append(event.xdata)
             curves[active_curve_index][1].append(event.ydata)
             self.update_curve_plot(active_curve_index)
-
-        # Якщо права кнопка – запускаємо режим перетягування
         elif event.button == 3:
             threshold = 1.0  # поріг вибору
             closest_point = None
@@ -349,33 +343,21 @@ class TriangleAPP(QMainWindow):
             else:
                 self.dragging_point = None
 
-    def update_dynamic_objects(self):
-        if hasattr(self, 'bezier_lines'):
-            for bezier in self.bezier_lines:
-                bezier.remove()
-            self.bezier_lines.clear()
-            self.bezier_curve_draw()
-
-        if hasattr(self, 'parametric_lines'):
-            for parametric in self.parametric_lines:
-                parametric.remove()
-            self.parametric_lines.clear()
-            self.parametric_curve_draw()
-        self.canvas.draw_idle()
-
     def on_motion(self, event):
         global active_curve_index
         if not hasattr(self, 'dragging_point') or self.dragging_point is None or event.inaxes is None:
             return
 
-        # Оновлюємо координати вибраної точки
         curves[active_curve_index][0][self.dragging_point] = event.xdata
         curves[active_curve_index][1][self.dragging_point] = event.ydata
 
-
-
-        # Оновлюємо дані кривої і контрольних точок
         self.update_curve_plot(active_curve_index)
+
+        # Якщо крива вже була побудована, оновлюємо її динамічно:
+        if hasattr(self, 'bezier_lines') and active_curve_index in self.bezier_lines:
+            self.bezier_curve_draw()
+        if hasattr(self, 'parametric_lines') and active_curve_index in self.parametric_lines:
+            self.parametric_curve_draw()
 
     def on_release(self, event):
         self.dragging_point = None
