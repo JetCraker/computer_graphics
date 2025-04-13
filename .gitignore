@@ -4,6 +4,11 @@
 !lab1
 !lab1/*.py
 !lab1/*.ui
+
 !lab2
 !lab2/*.py
 !lab2/*.ui
+
+!lab3
+!lab3/*.py
+!lab3/*.ui
