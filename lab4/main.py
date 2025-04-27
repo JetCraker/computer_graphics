@@ -165,12 +165,19 @@ class ColorModelApp(QMainWindow):
         if self.image is None:
             return
         try:
+            # 1. Основна конвертація
             lab = cv2.cvtColor(self.image, cv2.COLOR_RGB2Lab)
+
+            # 2. "Нормалізація" для візуалізації (не стандартне Lab)
             norm = lab.copy().astype(np.float32)
-            norm[:, :, 0] = norm[:, :, 0] * 255 / 100
-            norm[:, :, 1:] += 128
-            self.original_lab_image = lab
-            self.modified_image = np.clip(norm, 0, 255).astype(np.uint8)
+            norm[:, :, 0] = norm[:, :, 0] * 255 / 100  # Масштабування L [0, 100] -> [0, 255]
+            norm[:, :, 1:] += 128  # Зсув a, b [-128, 127] -> [0, 255]
+
+            # 3. Збереження справжнього Lab та оновлення модифікованого зображення
+            self.original_lab_image = lab  # Зберігаємо оригінальне Lab
+            self.modified_image = np.clip(norm, 0, 255).astype(np.uint8)  # Зберігаємо "візуалізацію" Lab
+
+            # 4. Відображення та логування
             self.display_image(self.modified_image, self.ui.modified_label)
             self.display_image(self.modified_image, self.ui.compare_modified)
             self.ui.image_tabs.setCurrentIndex(1)
@@ -207,24 +214,48 @@ class ColorModelApp(QMainWindow):
     def modify_magenta_saturation(self):
         if self.image is None:
             return
+        # 1. Конвертація в Lab та розділення каналів
         lab = cv2.cvtColor(self.image, cv2.COLOR_RGB2Lab)
         l, a, b = cv2.split(lab)
-        a_s = a.astype(np.int16) - 128
-        b_s = b.astype(np.int16) - 128
-        magenta_mask = (a_s > 10) & (b_s < -5)
-        chroma = np.sqrt(a_s.astype(np.float32)**2 + b_s.astype(np.float32)**2)
+
+        # 2. Робота з signed значеннями a, b
+        a_s = a.astype(np.int16) - 128  # 'a' тепер приблизно в [-128, 127]
+        b_s = b.astype(np.int16) - 128  # 'b' тепер приблизно в [-128, 127]
+
+        # 3. Визначення маски пурпурних пікселів
+        # Пурпурний/малиновий: 'a' позитивне (до червоного), 'b' негативне (до синього)
+        magenta_mask = (a_s > 10) & (b_s < -5)  # Емпіричні пороги
+
+        # 4. Обчислення насиченості
+        chroma = np.sqrt(a_s.astype(np.float32) ** 2 + b_s.astype(np.float32) ** 2)
+
+        # 5. Уточнення маски: тільки насичені пурпурні
         mask = magenta_mask & (chroma > 10)
+
+        # 6. Отримання коефіцієнта зміни насиченості
         factor = 1.0 + self.ui.saturation_slider.value() / 100.0
-        if np.any(mask):
-            angles = np.arctan2(b_s[mask], a_s[mask])
+
+        # 7. Модифікація пікселів у масці
+        if np.any(mask):  # Якщо є що модифікувати
+            # 7a. Обчислення кута (відтінку) в площині a-b
+            angles = np.arctan2(b_s[mask], a_s[mask])  # arctan2(y, x)
+            # 7b. Поточна хроматичність (насиченість)
             curr = chroma[mask]
-            new_chroma = np.clip(curr * factor, 0, 128)
+            # 7c. Обчислення нової хроматичності
+            new_chroma = np.clip(curr * factor, 0, 128)  # Множимо на фактор, обмежуємо
+            # 7d. Перерахунок a, b з НОВОЮ хромою та СТАРИМ кутом (збереження відтінку)
             a_s[mask] = (new_chroma * np.cos(angles)).astype(np.int16)
             b_s[mask] = (new_chroma * np.sin(angles)).astype(np.int16)
+
+        # 8. Конвертація a, b назад до uint8 [0, 255]
         a_mod = np.clip(a_s + 128, 0, 255).astype(np.uint8)
         b_mod = np.clip(b_s + 128, 0, 255).astype(np.uint8)
-        modified_lab = cv2.merge([l, a_mod, b_mod])
+
+        # 9. Злиття каналів та конвертація назад в RGB
+        modified_lab = cv2.merge([l, a_mod, b_mod])  # l - не змінювався
         self.modified_image = cv2.cvtColor(modified_lab, cv2.COLOR_Lab2RGB)
+
+        # 10. Оновлення UI та логування
         self.display_image(self.modified_image, self.ui.modified_label)
         self.display_image(self.modified_image, self.ui.compare_modified)
         pixels = np.sum(mask)
