@@ -7,7 +7,6 @@ from PySide6.QtGui import QPixmap, QImage, QPainter, QPen
 from PySide6.QtCore import Qt, QPoint, QRect, QSize # Додаємо QSize
 
 
-# Припускаємо, що клас Ui_ColorModelWindow з graph.py вже існує
 try:
     from graph import Ui_ColorModelWindow
 except ImportError:

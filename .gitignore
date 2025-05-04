@@ -12,3 +12,9 @@
 !lab3
 !lab3/*.py
 !lab3/*.ui
+
+!lab4
+!lab4/*.py
+
+!lab5
+!lab5/*.py
